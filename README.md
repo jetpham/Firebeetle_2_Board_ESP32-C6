@@ -23,3 +23,5 @@ On September 30, 2025, a few Noisebridgers got together and started to hack on t
 <p align="center">
   <img src="icon.jpg" alt="A group picture of Noisebridgers holding alchohol" width="500" />
 </p>
+
+> We used Kirkland Vodka to clean flux after soldering header pins
