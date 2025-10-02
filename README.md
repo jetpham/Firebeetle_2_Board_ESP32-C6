@@ -25,3 +25,25 @@ On September 30, 2025, a few Noisebridgers got together and started to hack on t
 </p>
 
 > We used Kirkland Vodka to clean flux after soldering header pins
+
+## Setup
+
+This project requires Nix for development. Follow these steps to set up the development environment:
+
+1. Install Nix if you haven't already:
+   - Follow the installation instructions at [nixos.org](https://nixos.org/download.html)
+
+2. Enter the development environment:
+   ```bash
+   nix develop
+   ```
+
+## Running
+
+To run the project:
+
+```bash
+sudo cargo run --release
+```
+
+**Note:** The `sudo` command is required for accessing the USB serial port on most Linux systems.

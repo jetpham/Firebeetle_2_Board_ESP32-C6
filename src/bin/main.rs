@@ -8,8 +8,9 @@
 
 use defmt::info;
 use esp_hal::clock::CpuClock;
+use esp_hal::delay::Delay;
+use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::main;
-use esp_hal::time::{Duration, Instant};
 use esp_hal::timer::timg::TimerGroup;
 use panic_rtt_target as _;
 
@@ -32,12 +33,25 @@ fn main() -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let _init = esp_wifi::init(timg0.timer0, esp_hal::rng::Rng::new(peripherals.RNG)).unwrap();
+    
+    let mut led = Output::new(peripherals.GPIO15, Level::Low, OutputConfig::default());
+
+    // Initialize delay
+    let delay = Delay::new();
+
+    info!("Starting LED blink program on GPIO15...");
 
     loop {
-        info!("Hello world!");
-        let delay_start = Instant::now();
-        while delay_start.elapsed() < Duration::from_millis(500) {}
+        // Turn LED on
+        led.set_high();
+        info!("LED ON");
+        delay.delay_millis(1000);
+        
+        // Turn LED off
+        led.set_low();
+        info!("LED OFF");
+        delay.delay_millis(1000);
     }
-
+    
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
 }
