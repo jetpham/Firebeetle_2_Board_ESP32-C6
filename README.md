@@ -38,6 +38,11 @@ This project requires Nix for development. Follow these steps to set up the deve
    nix develop
    ```
 
+## Tools and Documentation
+
+- **[The Rust on ESP Book](https://docs.espressif.com/projects/rust/book/preface.html)** - Embedded Rust development guide
+- **[FireBeetle 2 Board ESP32-C6 Wiki](https://wiki.dfrobot.com/SKU_DFR1075_FireBeetle_2_Board_ESP32_C6#Pin%20Definition)** - Hardware documentation and pin definitions
+
 ## Running
 
 To run the project:
