@@ -6,35 +6,54 @@
     holding buffers for the duration of a data transfer."
 )]
 
-use defmt::info;
-use esp_hal::clock::CpuClock;
-use esp_hal::delay::Delay;
-use esp_hal::ledc::{
-    channel::{self, config::PinConfig, ChannelIFace},
-    timer::{self, config::Duty, LSClockSource, TimerIFace},
-    LSGlobalClkSource, Ledc, LowSpeed,
+use esp_hal::{
+    clock::CpuClock,
+    gpio::{Level, Output, OutputConfig},
+    main,
+    time::{Duration, Instant},
+    timer::timg::TimerGroup,
 };
-use esp_hal::main;
-use esp_hal::time::Rate;
-use esp_hal::timer::timg::TimerGroup;
 use panic_rtt_target as _;
 
 extern crate alloc;
 
 use firebeetle_2_board_esp32_c6::animations::{
-    wave::wave_animation,
-    surge::surge_animation,
-    ping::ping_animation,
-    binary::binary_animation,
-    tyler::tyler_animation
+    binary::binary_animation, ping::ping_animation, surge::surge_animation, wave::wave_animation,
 };
 
 esp_bootloader_esp_idf::esp_app_desc!();
+struct SoftwarePWM {
+    duty_cycles: [u16; 8],
+    pwm_period: u16,
+    current_step: u16,
+}
 
+impl SoftwarePWM {
+    fn new() -> Self {
+        Self {
+            duty_cycles: [0; 8],
+            pwm_period: 2000,
+            current_step: 0,
+        }
+    }
+
+    fn set_duty_cycles(&mut self, duty_cycles: [u8; 8]) {
+        for (i, &duty) in duty_cycles.iter().enumerate() {
+            self.duty_cycles[i] = (duty as u16 * 20).min(2000);
+        }
+    }
+
+    fn should_be_high(&self, led_index: usize) -> bool {
+        self.current_step < self.duty_cycles[led_index]
+    }
+
+    fn update_step(&mut self) {
+        self.current_step = (self.current_step + 1) % self.pwm_period;
+    }
+}
 
 #[main]
 fn main() -> ! {
-
     rtt_target::rtt_init_defmt!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -45,63 +64,56 @@ fn main() -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let _init = esp_wifi::init(timg0.timer0, esp_hal::rng::Rng::new(peripherals.RNG)).unwrap();
 
-    let mut ledc = Ledc::new(peripherals.LEDC);
-    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
-
-    let mut lstimer0 = ledc.timer::<LowSpeed>(timer::Number::Timer0);
-    lstimer0
-        .configure(timer::config::Config {
-            duty: Duty::Duty8Bit,
-            clock_source: LSClockSource::APBClk,
-            frequency: Rate::from_hz(1000),
-        })
-        .unwrap();
-
-    let mut channels = [
-        ledc.channel(channel::Number::Channel0, peripherals.GPIO1),
-        ledc.channel(channel::Number::Channel1, peripherals.GPIO18),
-        ledc.channel(channel::Number::Channel2, peripherals.GPIO9),
-        ledc.channel(channel::Number::Channel3, peripherals.GPIO19),
-        ledc.channel(channel::Number::Channel4, peripherals.GPIO20),
-        ledc.channel(channel::Number::Channel5, peripherals.GPIO21),
+    let mut leds = [
+        Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO9, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO19, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO20, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO21, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO22, Level::Low, OutputConfig::default()),
+        Output::new(peripherals.GPIO23, Level::Low, OutputConfig::default()),
     ];
 
-    channels.iter_mut().for_each(|channel| {
-        channel
-            .configure(channel::config::Config {
-                timer: &lstimer0,
-                duty_pct: 0,
-                pin_config: PinConfig::PushPull,
-            })
-            .unwrap();
-    });
-
-    let delay = Delay::new();
-    let animations = [wave_animation, surge_animation, binary_animation, ping_animation, tyler_animation];
+    let mut pwm = SoftwarePWM::new();
+    let animations = [
+        wave_animation,
+        surge_animation,
+        binary_animation,
+        ping_animation,
+    ];
     let mut current_animation_index = 0;
-    let mut animation_start_time = 0u32;
     let animation_switch_interval_ms = 3000;
-    let frame_delay_ms = 10;
+
+    let mut animation_start = Instant::now();
 
     loop {
         let current_animation = animations[current_animation_index];
-        let led_values = current_animation(animation_start_time);
-        info!("LED values: {:?}", led_values);
-        
-        channels.iter_mut()
-            .zip(led_values.iter())
-            .for_each(|(channel, &duty_pct)| {
-                channel.set_duty(duty_pct).unwrap();
-            });
 
-        delay.delay_millis(frame_delay_ms);
-        animation_start_time += frame_delay_ms;
-        
-        if animation_start_time >= animation_switch_interval_ms {
-            animation_start_time = 0;
+        let animation_elapsed_ms = animation_start.elapsed().as_millis() as u32;
+        let led_values = current_animation(animation_elapsed_ms);
+
+        pwm.set_duty_cycles(led_values);
+
+        let pwm_cycles = 100;
+        for _ in 0..pwm_cycles {
+            for i in 0..8 {
+                if pwm.should_be_high(i) {
+                    leds[i].set_high();
+                } else {
+                    leds[i].set_low();
+                }
+            }
+
+            pwm.update_step();
+
+            let delay_start = Instant::now();
+            while delay_start.elapsed() < Duration::from_micros(5) {}
+        }
+
+        if animation_elapsed_ms >= animation_switch_interval_ms {
+            animation_start = Instant::now();
             current_animation_index = (current_animation_index + 1) % animations.len();
-            info!("Switching to animation {}", current_animation_index);
         }
     }
-
 }
