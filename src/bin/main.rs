@@ -21,14 +21,16 @@ use panic_rtt_target as _;
 
 extern crate alloc;
 
-use core::f32::consts::PI;
+use firebeetle_2_board_esp32_c6::animations::{
+    wave::wave_animation,
+    surge::surge_animation,
+    ping::ping_animation,
+    binary::binary_animation,
+    tyler::tyler_animation
+};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-fn calculate_sine_brightness(angle: f32) -> f32 {
-    let sine_value = libm::sinf(angle);
-    (sine_value + 1.0) / 2.0
-}
 
 #[main]
 fn main() -> ! {
@@ -64,7 +66,7 @@ fn main() -> ! {
         ledc.channel(channel::Number::Channel5, peripherals.GPIO21),
     ];
 
-    for channel in channels.iter_mut() {
+    channels.iter_mut().for_each(|channel| {
         channel
             .configure(channel::config::Config {
                 timer: &lstimer0,
@@ -72,37 +74,33 @@ fn main() -> ! {
                 pin_config: PinConfig::PushPull,
             })
             .unwrap();
-    }
+    });
 
     let delay = Delay::new();
-
-    let mut angle: f32 = 0.0;
-    let cycle_duration_ms = 1000;
-    let steps_per_cycle = (cycle_duration_ms / 20) as u32;
-    let angle_step = (2.0 * PI) / steps_per_cycle as f32;
-
-    info!("Starting smooth sine wave LED brightness control (1 second cycle)...");
+    let animations = [wave_animation, surge_animation, binary_animation, ping_animation, tyler_animation];
+    let mut current_animation_index = 0;
+    let mut animation_start_time = 0u32;
+    let animation_switch_interval_ms = 3000;
+    let frame_delay_ms = 10;
 
     loop {
-        for (i, channel) in channels.iter_mut().enumerate() {
-            let phase_offset = (i as f32) * (2.0 * PI) / 6.0;
-            let led_angle = angle + phase_offset;
+        let current_animation = animations[current_animation_index];
+        let led_values = current_animation(animation_start_time);
+        info!("LED values: {:?}", led_values);
+        
+        channels.iter_mut()
+            .zip(led_values.iter())
+            .for_each(|(channel, &duty_pct)| {
+                channel.set_duty(duty_pct).unwrap();
+            });
 
-            let brightness = calculate_sine_brightness(led_angle);
-            let duty_pct = (brightness * 100.0) as u8;
-
-            channel.set_duty(duty_pct).unwrap();
-
-            if i == 0 {
-                info!("Base angle: {}, LED 0 brightness: {}%", angle, duty_pct);
-            }
-        }
-
-        delay.delay_millis(20);
-
-        angle += angle_step;
-        if angle >= 2.0 * PI {
-            angle = 0.0;
+        delay.delay_millis(frame_delay_ms);
+        animation_start_time += frame_delay_ms;
+        
+        if animation_start_time >= animation_switch_interval_ms {
+            animation_start_time = 0;
+            current_animation_index = (current_animation_index + 1) % animations.len();
+            info!("Switching to animation {}", current_animation_index);
         }
     }
 
